@@ -10,7 +10,7 @@
 - 在 OpenWrt 源码目录中添加本地 feed（推荐）：
 
 ```
-echo "src-link findnrfeeds /absolute/path/to/findnr-lede-feeds" >> feeds.conf
+echo "src-link findnrfeeds https://github.com/findnr/my-lede-feeds.git" >> feeds.conf
 ./scripts/feeds update findnrfeeds
 ./scripts/feeds install luci-app-simple2fa
 ```
