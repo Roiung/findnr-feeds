@@ -12,7 +12,7 @@ define Package/luci-app-simple2fa
 	CATEGORY:=LuCI
 	SUBMENU:=3. Applications
 	TITLE:=Simple 2FA (TOTP) for Login
-	# 依赖关系：如果编译报错找不到包，请尝试把 oath-toolkit 改为 oathtool
+	# 修正依赖名：根据你的截图，改为 oath-toolkit 和 qrencode
 	DEPENDS:=+oath-toolkit +qrencode +coreutils-base32
 	PKGARCH:=all
 endef
@@ -24,16 +24,19 @@ endef
 define Build/Compile
 endef
 
+# ==========================================================
+# ⚠️ 注意：下面的每一行命令开头必须是 TAB 键，不能是空格！
+# ==========================================================
 define Package/luci-app-simple2fa/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/bootstrap/js
 
-	# 复制所有文件到安装目录
+	# 复制文件
 	$(CP) ./root/* $(1)/
 
-	# 修正权限：这里原本写的是 cgi，必须改为 cgi-bin 才能找到文件
+	# 修正路径错误：原本写的是 cgi，这里必须是 cgi-bin
 	$(INSTALL_BIN) ./root/www/cgi-bin/luci $(1)/www/cgi-bin/luci
 endef
 
