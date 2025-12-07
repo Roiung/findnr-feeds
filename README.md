@@ -2,7 +2,10 @@
 
 ## 简介
 
-这是一个 OpenWrt （lede）的 LuCI 插件 `luci-app-simple2fa`，旨在为路由器登录添加 **TOTP 二次验证 (2FA)** 功能。
+这是一个 OpenWrt （lede）的 LuCI 插件 `luci-app-simple2fa`，旨在为路由器登录添加 **TOTP 二次验证 (2FA)** 功能，这样在做内网穿透增加了一层安全防护。
+
+<img width="1553" height="641" alt="image" src="https://github.com/user-attachments/assets/b0a029f8-9863-490b-95a1-59b25892e721" />
+<img width="1036" height="663" alt="image" src="https://github.com/user-attachments/assets/60b42060-d15c-4a10-858e-328db5977a20" />
 
 ### ✨ 主要特性
 
