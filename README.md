@@ -6,6 +6,7 @@
 - luci-app-cymfrpc (客户端)` , **多实例管理**：支持同时运行多个 frpc 进程，互不干扰。
 - luci-app-cymfrps (服务端)，支持同时运行多个 frps 服务端进程。
 - luci-app-vpnrss (订阅生成器)，支持多协议聚合与转换 (Clash/Sing-box/Hysteria2)。
+- luci-app-cymonline (在线用户管理)，支持实时查看在线用户、流量监控及限速管理。
 
 ### ✨ 主要特性
 
@@ -42,6 +43,12 @@
     *   **智能命名**：自动为批量导入的节点添加序号（如 "香港 1", "香港 2"），避免重名。
 *   **安全保护**：支持 Token 访问控制，防止订阅被扫描。
 
+#### luci-app-cymonline (在线用户管理)
+*   **实时监控**：显示当前连接设备的 IP、MAC、主机名及实时上下行速率。
+*   **流量统计**：统计各设备的累计上传与下载流量。
+*   **限速管理**：基于 `tc` 和 `iptables` 实现对特定设备的带宽限制。
+*   **连接控制**：支持一键断开或禁用特定设备的网络访问。
+
 ## 安装说明
 
 - **依赖**：`oath-toolkit`、`qrencode` (安装插件时会自动安装)
@@ -57,6 +64,7 @@ echo "src-git findnrfeeds https://github.com/findnr/findnr-feeds.git" >> feeds.c
 ./scripts/feeds install luci-app-cymfrpc
 ./scripts/feeds install luci-app-cymfrps
 ./scripts/feeds install luci-app-vpnrss
+./scripts/feeds install luci-app-cymonline
 ```
 
 2. 选择并编译：
@@ -66,6 +74,7 @@ make menuconfig
 # LuCI -> Applications -> luci-app-simple2fa 选为 <*> 或 <M>
 # LuCI -> Applications -> luci-app-cymfrpc 选为 <*> 或 <M>
 # LuCI -> Applications -> luci-app-cymfrps 选为 <*> 或 <M>
+# LuCI -> Applications -> luci-app-cymonline 选为 <*> 或 <M>
 make -j$(nproc)
 ```
 
@@ -80,6 +89,7 @@ make package/feeds/findnrfeeds/cymfrp/compile V=s
 make package/feeds/findnrfeeds/luci-app-cymfrpc/compile V=s
 make package/feeds/findnrfeeds/luci-app-cymfrps/compile V=s
 make package/feeds/findnrfeeds/luci-app-vpnrss/compile V=s
+make package/feeds/findnrfeeds/luci-app-cymonline/compile V=s
 ```
 
 2. 将生成的 `.ipk` 拷贝到路由器并安装：
@@ -98,6 +108,11 @@ ssh root@<router> opkg install /tmp/luci-app-simple2fa_*.ipk
     *   或者点击“复制”按钮获取密钥手动输入。
 3.  **启用功能**：勾选“启用二次验证”，点击“保存并应用”。
 4.  **验证登录**：注销后重新登录，输入账号密码后，会跳转到验证码输入框。
+
+#### luci-app-cymonline (在线用户管理)
+1.  **进入界面**：Web 界面 → 状态 (Status) → 在线用户 (Online Users)。
+2.  **查看状态**：实时查看连接设备的流量、IP、MAC 及备注。
+3.  **限速设置**：点击设备右侧的“限速”按钮，输入上下行带宽限制。
 
 ## 故障排查
 
