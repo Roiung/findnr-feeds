@@ -5,17 +5,8 @@ local dispatcher = require "luci.dispatcher"
 local sys = require "luci.sys"
 local uci = require "luci.model.uci".cursor()
 
--- Enable caching
+-- Enable caching for performance
 luci.dispatcher.indexcache = "/tmp/luci-indexcache"
-
--- Logging helper
-local function log(msg)
-    -- Uncomment for debugging
-    -- local f = io.open("/tmp/simple2fa.log", "a")
-    -- if f then f:write(os.date() .. " " .. tostring(msg) .. "\n"); f:close() end
-end
-
-log("Simple2FA Lua CGI started")
 
 -- =========================================================================
 -- 1. Input Processing & 2FA Check
@@ -25,123 +16,56 @@ local env = os.getenv()
 local content_len = tonumber(env.CONTENT_LENGTH) or 0
 local input_data = ""
 
--- Read stdin if there is content
+-- Read stdin if there is content (POST data)
 if content_len > 0 then
     input_data = io.read(content_len) or ""
 end
 
 -- Logic: Intercept POST login
 if env.REQUEST_METHOD == "POST" and content_len > 0 then
-    -- Simple check for username=root in urlencoded data
+    -- Parse username
     local user = input_data:match("luci_username=([^&]+)")
+    
     if user == "root" then
+        -- Check if 2FA is enabled
         local enabled = uci:get("simple2fa", "global", "enabled")
+        
         if enabled == "1" then
             local secret = uci:get("simple2fa", "global", "secret")
             if secret then
+                -- Extract token
                 local token = input_data:match("token=([^&]*)") or ""
-                -- Verify with oathtool
+                
+                -- Verify with oathtool (base32, totp, 6 digits)
                 local cmd = string.format("oathtool -b --totp -d 6 '%s'", secret)
                 local correct_code = sys.exec(cmd):gsub("%s+", "")
                 
                 if correct_code ~= "" and token ~= correct_code then
-                    log("2FA Failed: " .. token .. " vs " .. correct_code)
+                    -- ❌ Verification Failed
                     print("Status: 302 Found")
                     print("Location: " .. (env.SCRIPT_NAME or "/cgi-bin/luci") .. "?simple2fa_err=1")
                     print("")
                     os.exit(0)
                 end
-                log("2FA Success")
+                
+                -- ✅ Success: Allow request to proceed to real dispatcher
             end
         end
     end
 end
 
 -- =========================================================================
--- 2. Output Injection Logic
+-- 2. Dispatch to Real LuCI
 -- =========================================================================
 
-local is_login_page = false
-local query = env.QUERY_STRING or ""
--- If GET and no stok=, it's likely the login page
-if env.REQUEST_METHOD == "GET" and not query:match("stok=") then
-    is_login_page = true
-end
-
--- Original Source (Input)
-local input_source = ltn12.source.string(input_data)
-
--- Filtered Sink (Output) for Injection
-local response_chunks = {}
-local function output_filter(chunk)
-    if chunk then
-        if is_login_page then
-            table.insert(response_chunks, chunk)
-        else
-            io.write(chunk)
-        end
-    else
-        -- End of stream
-        if is_login_page then
-            local full_response = table.concat(response_chunks)
-            
-            -- Detect where to inject
-            local inject_pos = full_response:find("</body>") or full_response:find("</html>")
-            
-            local js_code = [[
-<script type="text/javascript">
-// Simple2FA Auto-Inject
-(function() {
-    function inject() {
-        var pwd = document.querySelector('input[type="password"][name="luci_password"]');
-        if (!pwd || document.querySelector('input[name="token"]')) return;
-        
-        var tok = document.createElement('input');
-        tok.type = "text";
-        tok.name = "token";
-        tok.className = pwd.className;
-        tok.style.cssText = pwd.style.cssText;
-        tok.style.marginTop = "10px";
-        tok.placeholder = "2FA Token (Leave empty if disabled)";
-        tok.autocomplete = "off";
-        
-        pwd.parentNode.insertBefore(tok, pwd.nextSibling);
-
-        if (window.location.search.indexOf('simple2fa_err=1') !== -1) {
-             var err = document.createElement('div');
-             err.style.color = 'red';
-             err.style.textAlign = 'center';
-             err.style.marginBottom = '10px';
-             err.innerHTML = '<strong>Validation Failed</strong>: Invalid Token';
-             var form = document.querySelector('form');
-             if(form) form.insertBefore(err, form.firstChild);
-        }
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
-    else inject();
-})();
-</script>
-]]
-            if inject_pos then
-                local pre = full_response:sub(1, inject_pos - 1)
-                local post = full_response:sub(inject_pos)
-                io.write(pre .. js_code .. post)
-            else
-                io.write(full_response .. js_code)
-            end
-        end
-    end
-    return 1
-end
-
--- =========================================================================
--- 3. Dispatch to LuCI
--- =========================================================================
+-- We no longer need to check for GET or inject HTML.
+-- The modified 'sysauth.js' view handles the UI.
+-- We just pass the request through.
 
 local req = http.Request(
     env,
-    input_source,
-    output_filter
+    ltn12.source.string(input_data),
+    ltn12.sink.file(io.stdout)
 )
 
 dispatcher.http_dispatch(req)

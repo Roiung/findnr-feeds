@@ -3,8 +3,13 @@
 START=99
 STOP=10
 
-CGI_LUCI="/www/cgi-bin/luci"
-SIMPLE2FA_LUCI="/usr/share/luci-app-simple2fa/luci"
+# Target Files
+CGI_TARGET="/www/cgi-bin/luci"
+JS_TARGET="/www/luci-static/resources/view/sysauth.js"
+
+# Source Files (from our package)
+CGI_SOURCE="/usr/share/luci-app-simple2fa/luci"
+JS_SOURCE="/usr/share/luci-app-simple2fa/sysauth.js"
 
 start() {
 	local enabled=$(uci -q get simple2fa.global.enabled)
@@ -12,38 +17,55 @@ start() {
 	logger -t simple2fa "Start called (config enabled=$enabled)"
 
 	if [ "$enabled" = "1" ]; then
-		# 1. Backup original if not exists
-		if [ -e "$CGI_LUCI" ] && [ ! -e "${CGI_LUCI}.bak" ]; then
-			# Check if it's our own script already (don't backup ourselves)
-			if ! grep -q "Simple2FA" "$CGI_LUCI" 2>/dev/null; then
-				cp -af "$CGI_LUCI" "${CGI_LUCI}.bak"
-				logger -t simple2fa "Backup created: ${CGI_LUCI}.bak"
+		# === 1. Backend Replacement (CGI) ===
+		if [ -e "$CGI_TARGET" ] && [ ! -e "${CGI_TARGET}.bak" ]; then
+			if ! grep -q "Simple2FA" "$CGI_TARGET" 2>/dev/null; then
+				cp -af "$CGI_TARGET" "${CGI_TARGET}.bak"
+				logger -t simple2fa "Backup created: ${CGI_TARGET}.bak"
 			fi
 		fi
 		
-		# 2. Enforce 2FA version
-		if [ -f "$SIMPLE2FA_LUCI" ]; then
-			logger -t simple2fa "Enforcing 2FA CGI..."
-			rm -f "$CGI_LUCI"
-			cp -f "$SIMPLE2FA_LUCI" "$CGI_LUCI"
-			chmod +x "$CGI_LUCI"
-			logger -t simple2fa "2FA CGI enforced successfully"
-		else
-			logger -t simple2fa "ERROR: Source $SIMPLE2FA_LUCI missing!"
+		# === 2. Frontend Replacement (JS View) ===
+		# Note: Check if sysauth.js exists (LuCI 2 standard)
+		if [ -e "$JS_TARGET" ] && [ ! -e "${JS_TARGET}.bak" ]; then
+			cp -af "$JS_TARGET" "${JS_TARGET}.bak"
+			logger -t simple2fa "Backup created: ${JS_TARGET}.bak"
 		fi
+
+		# === 3. Install Replacements ===
+		if [ -f "$CGI_SOURCE" ]; then
+		    rm -f "$CGI_TARGET"
+		    cp -f "$CGI_SOURCE" "$CGI_TARGET"
+		    chmod +x "$CGI_TARGET"
+		fi
+		
+		if [ -f "$JS_SOURCE" ] && [ -e "/www/luci-static/resources/view" ]; then
+		    rm -f "$JS_TARGET"
+		    cp -f "$JS_SOURCE" "$JS_TARGET"
+		fi
+		
+		logger -t simple2fa "Service Enabled: Files replaced"
 	else
-		logger -t simple2fa "Service disabled in config, ensuring original CGI..."
+		logger -t simple2fa "Service disabled in config"
 		stop
 	fi
 }
 
 stop() {
-	# Restore original if backup exists
-	if [ -f "${CGI_LUCI}.bak" ]; then
-		logger -t simple2fa "Restoring original CGI..."
-		rm -f "$CGI_LUCI"
-		cp -af "${CGI_LUCI}.bak" "$CGI_LUCI"
-		chmod +x "$CGI_LUCI"
-		logger -t simple2fa "Original CGI restored"
+	# === 1. Restore Backend ===
+	if [ -f "${CGI_TARGET}.bak" ]; then
+		rm -f "$CGI_TARGET"
+		cp -af "${CGI_TARGET}.bak" "$CGI_TARGET"
+		rm -f "${CGI_TARGET}.bak"
+		chmod +x "$CGI_TARGET"
+		logger -t simple2fa "Restored: $CGI_TARGET"
+	fi
+
+	# === 2. Restore Frontend ===
+	if [ -f "${JS_TARGET}.bak" ]; then
+		rm -f "$JS_TARGET"
+		cp -af "${JS_TARGET}.bak" "$JS_TARGET"
+		rm -f "${JS_TARGET}.bak"
+		logger -t simple2fa "Restored: $JS_TARGET"
 	fi
 }
