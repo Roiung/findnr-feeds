@@ -105,15 +105,25 @@ qr.otp_url = otp_url
 
 -- === 6. 应用更改逻辑 (通过 Init 脚本) ===
 function m.on_after_commit(self)
+    -- Debug: 记录保存操作
+    sys.call("logger -t simple2fa '[settings.lua] on_after_commit 被调用'")
+    
     local enabled = uci:get("simple2fa", "global", "enabled") == "1"
+    sys.call(string.format("logger -t simple2fa '[settings.lua] enabled=%s'", tostring(enabled)))
     
     if enabled then
+        sys.call("logger -t simple2fa '[settings.lua] 执行: /etc/init.d/simple2fa enable'")
         sys.call("/etc/init.d/simple2fa enable")
+        sys.call("logger -t simple2fa '[settings.lua] 执行: /etc/init.d/simple2fa start'")
         sys.call("/etc/init.d/simple2fa start")
     else
+        sys.call("logger -t simple2fa '[settings.lua] 执行: /etc/init.d/simple2fa stop'")
         sys.call("/etc/init.d/simple2fa stop")
+        sys.call("logger -t simple2fa '[settings.lua] 执行: /etc/init.d/simple2fa disable'")
         sys.call("/etc/init.d/simple2fa disable")
     end
+    
+    sys.call("logger -t simple2fa '[settings.lua] on_after_commit 完成'")
 end
 
 return m

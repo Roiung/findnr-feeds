@@ -1,71 +1,116 @@
 #!/usr/bin/lua
-local ltn12 = require "luci.ltn12"
-local http = require "luci.http"
-local dispatcher = require "luci.dispatcher"
-local sys = require "luci.sys"
-local uci = require "luci.model.uci".cursor()
+--[[
+  Simple2FA Debug Build - CGI Script
+  所有操作都会记录到系统日志，使用 logread | grep simple2fa 查看
+  标记: Simple2FA-Debug (用于识别是否已替换)
+]]--
 
--- Enable caching for performance
-luci.dispatcher.indexcache = "/tmp/luci-indexcache"
-
--- =========================================================================
--- 1. Input Processing & 2FA Check
--- =========================================================================
-
-local env = os.getenv()
-local content_len = tonumber(env.CONTENT_LENGTH) or 0
-local input_data = ""
-
--- Read stdin if there is content (POST data)
-if content_len > 0 then
-    input_data = io.read(content_len) or ""
+-- 日志函数
+local function log(msg)
+    os.execute(string.format("logger -t simple2fa '[CGI] %s'", msg:gsub("'", "\\'")))
 end
 
--- Logic: Intercept POST login
-if env.REQUEST_METHOD == "POST" and content_len > 0 then
-    -- Parse username
-    local user = input_data:match("luci_username=([^&]+)")
+log("========== CGI 被调用 ==========")
+
+-- 获取环境变量
+local method = os.getenv("REQUEST_METHOD") or "UNKNOWN"
+local content_len = tonumber(os.getenv("CONTENT_LENGTH")) or 0
+local uri = os.getenv("REQUEST_URI") or "UNKNOWN"
+
+log(string.format("请求信息: METHOD=%s, CONTENT_LENGTH=%d, URI=%s", method, content_len, uri))
+
+-- 读取 POST 数据 (如果有)
+local post_data = ""
+if method == "POST" and content_len > 0 and content_len < 10240 then
+    post_data = io.read(content_len) or ""
+    log(string.format("POST 数据长度: %d 字节", #post_data))
     
-    if user == "root" then
-        -- Check if 2FA is enabled
-        local enabled = uci:get("simple2fa", "global", "enabled")
+    -- 解析关键字段 (不记录密码)
+    local username = post_data:match("luci_username=([^&]+)")
+    local has_password = post_data:match("luci_password=") and true or false
+    local totp_code = post_data:match("totp_code=([^&]*)") or ""
+    
+    log(string.format("表单解析: username=%s, has_password=%s, totp_code='%s'", 
+        username or "nil", tostring(has_password), totp_code))
+    
+    -- 检查是否需要 2FA 验证
+    if username == "root" then
+        log("用户 root 登录检测 -> 检查 2FA 配置")
+        
+        -- 读取 UCI 配置
+        local handle = io.popen("uci -q get simple2fa.global.enabled")
+        local enabled = handle:read("*a"):gsub("%s+", "")
+        handle:close()
+        log(string.format("UCI 读取: enabled='%s'", enabled))
         
         if enabled == "1" then
-            local secret = uci:get("simple2fa", "global", "secret")
-            if secret then
-                -- Extract token
-                local token = input_data:match("token=([^&]*)") or ""
+            log("2FA 已启用 -> 开始验证")
+            
+            -- 获取密钥
+            handle = io.popen("uci -q get simple2fa.global.secret")
+            local secret = handle:read("*a"):gsub("%s+", "")
+            handle:close()
+            
+            if secret and #secret > 0 then
+                log(string.format("密钥已配置 (长度=%d)", #secret))
                 
-                -- Verify with oathtool (base32, totp, 6 digits)
-                local cmd = string.format("oathtool -b --totp -d 6 '%s'", secret)
-                local correct_code = sys.exec(cmd):gsub("%s+", "")
+                -- 调用 oathtool 计算正确验证码
+                local cmd = string.format("oathtool -b --totp -d 6 '%s' 2>&1", secret)
+                handle = io.popen(cmd)
+                local correct_code = handle:read("*a"):gsub("%s+", "")
+                handle:close()
                 
-                if correct_code ~= "" and token ~= correct_code then
-                    -- ❌ Verification Failed
+                log(string.format("TOTP 计算: correct='%s', input='%s'", correct_code, totp_code))
+                
+                if correct_code ~= "" and totp_code ~= correct_code then
+                    log("❌ 验证失败 -> 重定向到登录页")
                     print("Status: 302 Found")
-                    print("Location: " .. (env.SCRIPT_NAME or "/cgi-bin/luci") .. "?simple2fa_err=1")
+                    print("Location: /cgi-bin/luci?simple2fa_err=1")
                     print("")
                     os.exit(0)
+                else
+                    log("✅ 验证成功 (或验证码匹配)")
                 end
-                
-                -- ✅ Success: Allow request to proceed to real dispatcher
+            else
+                log("警告: 密钥未配置，跳过验证")
             end
+        else
+            log("2FA 未启用，跳过验证")
         end
     end
 end
 
--- =========================================================================
--- 2. Dispatch to Real LuCI
--- =========================================================================
+log("继续执行原始 LuCI 流程...")
 
--- We no longer need to check for GET or inject HTML.
--- The modified 'sysauth.js' view handles the UI.
--- We just pass the request through.
+-- 调用原始 LuCI
+require "luci.cacheloader"
+require "luci.sgi.cgi"
 
-local req = http.Request(
-    env,
-    ltn12.source.string(input_data),
-    ltn12.sink.file(io.stdout)
-)
+-- 如果我们读取了 POST 数据，需要"喂回"给 LuCI
+-- 通过设置环境变量和重定向 stdin
+if #post_data > 0 then
+    -- 创建临时文件存储 POST 数据
+    local tmp_file = "/tmp/simple2fa_post_" .. os.time()
+    local f = io.open(tmp_file, "w")
+    if f then
+        f:write(post_data)
+        f:close()
+        
+        -- 重新打开作为 stdin
+        io.input(tmp_file)
+        log("POST 数据已存储到临时文件并重定向 stdin")
+    end
+end
 
-dispatcher.http_dispatch(req)
+luci.dispatcher.indexcache = "/tmp/luci-indexcache"
+log("调用 luci.sgi.cgi.run()")
+
+local ok, err = pcall(function()
+    luci.sgi.cgi.run()
+end)
+
+if not ok then
+    log(string.format("LuCI 执行错误: %s", tostring(err)))
+end
+
+log("========== CGI 结束 ==========")
