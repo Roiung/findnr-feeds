@@ -24,9 +24,9 @@
 				</div>
 				<!-- Simple2FA: TOTP 验证码输入框 -->
 				<div class="cbi-value">
-					<label class="cbi-value-title" for="totp_code">{{ _('Verification Code') }}</label>
+					<label class="cbi-value-title" for="totp_code">验证码</label>
 					<div class="cbi-value-field">
-						<input name="totp_code" id="totp_code" type="text" placeholder="{{ _('Leave empty if 2FA not enabled') }}" autocomplete="off">
+						<input name="totp_code" id="totp_code" type="text" placeholder="未启用二次验证请留空" autocomplete="off">
 					</div>
 				</div>
 			</div>
@@ -43,7 +43,7 @@
 
 	{% if (http.formvalue('simple2fa_err')): %}
 	<div class="alert-message error">
-		{{ _('Two-Factor Authentication Failed: Invalid verification code.') }}
+		二次验证失败：验证码错误，请重试。
 	</div>
 	{% endif %}
 
